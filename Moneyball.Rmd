@@ -1,0 +1,20 @@
+---
+title: "Moneyball"
+author: "David Moste, Vanita Thompson, Sadia Perveen"
+date: "3/1/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Exploration
+
+## Data Preparation
+
+## Build Models
+
+## Select Models
+
+## Code
