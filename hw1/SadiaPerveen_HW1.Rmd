@@ -1,0 +1,173 @@
+---
+title: "Homework1"
+author: "Sadia Perveen"
+date: "3/2/2021"
+output: html_document
+---
+```{r}
+install.packages("ggplot2")
+require(ggplot2)
+
+install.packages("reshape2")
+require(reshape2)
+
+install.packages("tidyr")
+require(tidyr)
+
+install.packages("stats")
+require(stats)
+
+install.packages("corrplot")
+require(corrplot)
+
+install.packages("mice")
+require(mice)
+
+install.packages("caret")
+require(caret)
+
+install.packages("e1071")
+require(e1071)
+
+install.packages("psych")
+require(psych)
+```
+
+
+
+Introduction:In this homework assignment, you will explore, analyze and model a data set containing approximately 2200 records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record has the performance of the team for the given year, with all of the statistics adjusted to match the performance of a 162 game season.
+Your objective is to build a multiple linear regression model on the training data to predict the number of wins for the team. You can only use the variables given to you (or variables that you derive from the variables provided). Below is a short description of the variables of interest in the data set:
+
+Data Exploration: 
+Describe the size and the variables in the moneyball training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren’t doing your job. Some suggestions are given below. Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas.
+a. Mean / Standard Deviation / Median
+b. Bar Chart or Box Plot of the data
+c. Is the data correlated to the target variable (or to other variables?)
+d. Are any of the variables missing and need to be imputed “fixed”?
+
+First lets import the data:
+```{r}
+training <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/moneyball-training-data.csv")
+```
+
+A quick overview of the data. 
+```{r}
+head(training)
+summary(training)
+colnames(training)
+
+```
+
+```{r}
+
+ggplot(stack(training), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 2000)) +
+  theme(axis.text.x=element_text(angle=50, hjust=1)) 
+
+training <- training[,-1]
+
+data1 = melt(training)
+ggplot(data1, aes(x= value)) + 
+     geom_density(fill='purple') + facet_wrap(~variable, scales = 'free') 
+
+
+```
+Correlations 
+
+```{r}
+cor1 <- cor(training, method = "pearson", use = "complete.obs")
+
+round(cor1, 2)
+corrplot(cor1, method="shade")
+
+```
+
+2. DATA PREPARATION (25 Points)
+Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations.
+a. Fix missing values (maybe with a Mean or Median value)
+b. Create flags to suggest if a variable was missing
+c. Transform data by putting it into buckets
+d. Mathematical transforms such as log or square root (or use Box-Cox)
+e. Combine variables (such as ratios or adding or multiplying) to create new variables
+```{r}
+head(training)
+summary(training)
+names(training)
+#We see that TEAM_BATTING_HBP has alot of Missing values therefore we will remove it. 
+training <- training[,-10]
+# Imputing missing values using mice 
+
+training2 <- mice(training, m=5, maxit = 5, method = 'pmm')
+training2 <- complete(training2)
+summary(training2)
+
+training_final1 <- melt(training2) 
+
+ggplot(training_final1, aes(x= value)) + 
+     geom_density(fill='blue') + facet_wrap(~variable, scales = 'free') 
+
+```
+3. BUILD MODELS (25 Points)
+Using the training data set, build at least three different multiple linear regression models, using different variables (or the same variables with different transformations). Since we have not yet covered automated variable selection methods, you should select the variables manually (unless you previously learned Forward or Stepwise selection, etc.). Since you manually selected a variable for inclusion into the model or exclusion into the model, indicate why this was done.
+Discuss the coefficients in the models, do they make sense? For example, if a team hits a lot of Home Runs, it would be reasonably expected that such a team would win more games. However, if the coefficient is negative (suggesting that the team would lose more games), then that needs to be discussed. Are you keeping the model even though it is counter intuitive? Why? The boss needs to know.
+
+```{r}
+M1 <- lm(TARGET_WINS ~ . ,training2)
+summary(M1)
+
+M2 <- lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BATTING_2B+TEAM_BATTING_HR+ TEAM_BATTING_BB+TEAM_PITCHING_H+TEAM_PITCHING_HR+ TEAM_PITCHING_BB,training2)
+summary(M2)
+
+#high significant 
+M3 <- lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BATTING_SO+TEAM_BASERUN_SB+ TEAM_PITCHING_H+TEAM_FIELDING_E+ TEAM_FIELDING_DP,training2)
+summary(M3)
+
+
+
+```
+
+4. SELECT MODELS (25 Points)
+Decide on the criteria for selecting the best multiple linear regression model. Will you select a model with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your model.
+For the multiple linear regression model, will you use a metric such as Adjusted R2, RMSE, etc.? Be sure to explain how you can make inferences from the model, discuss multi-collinearity issues (if any), and discuss other relevant model output. Using the training data set, evaluate the multiple linear regression model based on (a) mean squared error, (b) R2, (c) F-statistic, and (d) residual plots. Make predictions using the evaluation data set.
+
+```{r}
+#now we can do the same to the evaluation data set and compare. 
+
+evaldata <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/moneyball-evaluation-data.csv") 
+
+head(evaldata)
+summary(evaldata)
+colnames(evaldata)
+colnames(training2)
+
+ggplot(stack(evaldata), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 2000)) +
+  theme(axis.text.x=element_text(angle=50, hjust=1)) 
+
+evaldata <- evaldata[,-1]
+
+data2 = melt(evaldata)
+ggplot(data2, aes(x= value)) + 
+     geom_density(fill='green') + facet_wrap(~variable, scales = 'free') 
+
+evaldata <- evaldata[,-9]
+# Imputing missing values using mice 
+
+eval2 <- mice(evaldata, m=5, maxit = 5, method = 'pmm')
+eval2 <- complete(eval2)
+summary(eval2)
+
+    eval_final1 <- melt(eval2) 
+
+    ggplot(eval_final1, aes(x= value)) + 
+     geom_density(fill='red') + facet_wrap(~variable, scales = 'free') 
+    
+colnames(training2)
+colnames(evaldata)
+
+final <- predict(M3, newdata = eval2, interval = "prediction")
+summary(final)
+```
+
