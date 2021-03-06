@@ -1,0 +1,271 @@
+---
+title: "Moneyball"
+author: "David Moste, Vanita Thompson, Sadia Perveen"
+date: "3/1/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Exploration
+After grabbing the data, I first checked out a summary of the data to see the predictor variables provided along with their summary statistics. This also allowed me to see which predictor variables contained missing data. This summary data can be seen in the table below.
+
+Predictor | Min | Median | Mean | Max | NAs
+--------- | --- | ------ | ---- | --- | ---
+FIELDING_DP | 52 | 149 | 146.4 | 228 | 286
+FIELDING_E | 65 | 159 | 246.5 | 1898 | 0
+PITCHING_SO | 0 | 813.5 | 817.7 | 19278 | 102
+PITCHING_BB | 0 | 536.5 | 553 | 3645 | 0
+PITCHING_HR | 0 | 107 | 105.7 | 343 | 0
+PITCHING_H | 1137 | 1518 | 1779 | 30132 | 0
+BATTING_HBP | 29 | 58 | 59.36 | 95 | 2085
+BATTING_SO | 0 | 750 | 735.6 | 1399 | 102
+BATTING_BB | 0 | 512 | 501.6 | 878 | 0
+BATTING_HR | 0 | 102 | 99.61 | 264 | 0
+BATTING_3B | 0 | 47 | 55.25 | 223 | 0
+BATTING_2B | 69 | 238 | 241.2 | 458 | 0
+BATTING_H | 891 | 1454 | 1469 | 2554 | 0
+BASERUN_CS | 0 | 49 | 52.8 | 201 | 772
+BASERUN_SB | 0 | 101 | 124.8 | 697 | 131
+
+I then created three plots: a small multiples histogram, a small multiples scatterplot, and a boxplot.
+
+![](initial_histogram.png)
+
+The purpose of the histogram was to get a sense of the normality of each variable. Upon looking at the histogram, it was easy to see that TEAM_BASERUN_CS, TEAM_BASERUN_SB, TEAM_BATTING_3B, TEAM_BATTING_HR, TEAM_FIELDING_E, and TEAM_PITCHING_HR were right skewed and would need to be transformed.
+
+![](initial_scatterplot.png)
+
+The purpose of this scatterplot was to get a sense of the relationship between each variable and TARGET_WINS. From this, you can see that no predictors have a strong negative relationship to TARGET_WINS, but TEAM_BATTING_H does seem to have a clear positive correlation.
+
+![](initial_boxplot.png)
+
+The purpose of the boxplot was to see the data in another light and to get a sense of where there were outliers. It was easy to see at this point that TEAM_PITCHING_H contained a bunch of outliers at the top of the range.
+
+![](zoomed_boxplot.png)
+
+I then zoomed in on the boxplot to get a better sense of outliers in the other predictors.
+
+![](initial_correlation.png)
+
+Finally, I created a correlation plot to show how different predictors are related to the target as well as each other. From this plot, it's easy to see that wins is most positively correlated to TEAM_BATTING_H and most negatively correlated to TEAM_FIELDING_E. As expected, other batting categories seem to have positive correlations as well. It is interesting to note that TEAM_PITCHING_HR has a positive correlation too, which is certainly not expected. Some other information that comes out of this visual is a strong correlation between TEAM_BATTING_HR and TEAM_PITCHING_HR and between TEAM_PITCHING_HR and TEAM_FIELDING_E as well as a strong negative correlation between TEAM_BATTING_BB and TEAM_FIELDING_E and between TEAM_FIELDING_E and TEAM_BATTING_HR.
+
+## Data Preparation
+To start data preparation, I performed a few transformations. I did a square root transformation on each of the following variables to correct for their right skew : TEAM_BASERUN_CS, TEAM_BASERUN_SB, TEAM_BATTING_3B, TEAM_BATTING_HR, TEAM_FIELDING_E, and TEAM_PITCHING_HR. I ultimately chose to use a square root transformation instead of a log transformation because many of the variables had large portions of their data with values of 0. This makes log transformations a little bit less useable since you end up with -Inf values.
+
+![](transformed_predictors.png)
+
+I then viewed a histogram of all the transformed predictors that I created. The histogram showed a clear bimodal distribution for TEAM_BATTING_HR and TEAM_PITCHING_HR. It also showed that TEAM_FILEDING_E was still highly right skewed. Due to this, I decided to take a log transform of TEAM_FIELDING_E to check if that would correct the skew. As can be seen below, this log transformation helped, but was not perfect.
+
+![](team_fielding_log.png)
+
+Next, I used the MICE package to impute missing values. I used MICE to implement multiple imputations using predictive mean matching method. After imputing missing values, I created two new plots: a histogram to view normality and a scatterplot to see outliers and correlation.
+
+![](complete_histogram.png)
+
+![](complete_scatterplot.png)
+
+Finally, I created a new predictor, TEAM_BATTING_OB, which was meant to show how often a team got on base and I filtered a few predictors to remove extreme outliers that appeared to have some leverage.
+
+## Build Models
+The first model I built was simply every variable in the data (excluding variables where I had later taken a transformation).
+
+![](model_1.png)
+
+Oddly, this first model found that both TEAM_BATTING_2B and TEAM_FIELDING_DP have a negative coefficient, which suggests increasing them would decrease TARGET_WINS. On the opposite side, TEAM_BASERUN_CS_SQRT and TEAM_PITCHING_H have a positive coefficient, suggesting that they increase TARGET_WINS.
+
+The second model I built was based off the first model, except that I iteratively removed the predictor with the highest p-value until the r-squared value was no longer increasing.
+
+![](model_2.png)
+
+For the second model, TEAM_BATTING_2B still has a negative coefficient and TEAM_PITCHING_H still has a positive coefficient, both of which don't make a ton of immediate sense.
+
+The final model I created was based off of the initial correlation plot I created, using the variables that had the strongest correlation (either positive or negative).
+
+![](model_3.png)
+
+For the third model, all of the slopes make intuitive sense, but the overall fit is rather poor with an adjusted r-squared of 0.197.
+
+## Select Models
+In this instance, since the only model that doesn't have any counter intuitive coefficients has a significantly lower adjusted r-squared value, I'm going to choose to use the second model, which had many of the same assumptions as the first, but had a better adjusted r-squared.
+
+The MSE is about 145 for this model. The adjusted r-squared value for this model is 0.34 which means 34% of the variation in TARGET_WINS can be accounted for by the model. The F-statistic is 89.34 coupled with a tiny p-value means the independent variables in our model are statistically significant. Finally, as shown above, the histogram of the residuals shows normality, the residuals appear to be randomly distributed, and the qqplot shows a nearly straight line.
+
+## Code
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(mice)
+library(corrplot)
+
+# Read in the data
+mlb <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw1/moneyball-training-data.csv")
+summary(mlb)
+
+# Plot a histogram for each statistic to get a sense of the distributions
+mlb %>%
+  gather(-INDEX, key = "var", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 100) +
+  facet_wrap(~var, scales = "free") +
+  xlab("Category Value") +
+  ylab("Count")
+
+# Plot a scatterplot for each predictor to get a sense of relationships to TARGET_WINS
+mlb %>%
+  gather(-TARGET_WINS, -INDEX, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = TARGET_WINS)) +
+  geom_point() +
+  facet_wrap(~var, scales = "free") +
+  xlab("Category Value") +
+  ylab("Wins")
+
+# Plot a boxplot for each statistic to get a sense of the outliers
+ggplot(stack(mlb), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  coord_flip()
+
+# Zoom in on the boxplot
+ggplot(stack(mlb), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  coord_flip() +
+  ylim(0,5000)
+
+# Show the correlation between the predictors and the target
+corrplot(cor(mlb), method = "circle",
+         type = "upper",
+         tl.col = "black",
+         tl.srt = 45)
+
+# Fix the skew of the variable by doing a square root transformation
+mlb <- mlb %>%
+  mutate(TEAM_BATTING_3B_SQRT = sqrt(TEAM_BATTING_3B)) %>%
+  mutate(TEAM_BATTING_HR_SQRT = sqrt(TEAM_BATTING_HR)) %>%
+  mutate(TEAM_FIELDING_E_SQRT = sqrt(TEAM_FIELDING_E)) %>%
+  mutate(TEAM_BASERUN_CS_SQRT = sqrt(TEAM_BASERUN_CS)) %>%
+  mutate(TEAM_BASERUN_SB_SQRT = sqrt(TEAM_BASERUN_SB)) %>%
+  mutate(TEAM_PITCHING_HR_SQRT = sqrt(TEAM_PITCHING_HR))
+
+ggplot(gather(mlb[18:23], cols, value), aes(x = value)) + 
+  geom_histogram(bins = 100) +
+  facet_wrap(~cols, scales = "free")
+
+mlb <- mlb %>%
+  mutate(TEAM_FIELDING_E_LOG = log(TEAM_FIELDING_E))
+
+ggplot(gather(mlb[24], cols, value), aes(x = value)) + 
+  geom_histogram(bins = 100) +
+  facet_wrap(~cols, scales = "free")
+
+# Use the mice package (predictive mean matching method) to impute any missing
+# values. Then normalize the data set and plot a series of histograms.
+mlb_temp <- mice(mlb,
+                 m = 5,
+                 maxit = 10,
+                 method = "pmm",
+                 seed = 1234)
+complete_mlb <- complete(mlb_temp,1)
+
+complete_mlb %>%
+  gather(-INDEX, key = "var", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 100) +
+  facet_wrap(~var, scales = "free") +
+  xlab("Category Value") +
+  ylab("Count")
+
+complete_mlb %>%
+  gather(-TARGET_WINS, -INDEX, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = TARGET_WINS)) +
+  geom_point() +
+  facet_wrap(~var, scales = "free") +
+  xlab("Category Value") +
+  ylab("Wins")
+
+# Create a new variable: ON BASE
+complete_mlb <- complete_mlb %>%
+  mutate(TEAM_BATTING_OB = TEAM_BATTING_H + TEAM_BATTING_BB + TEAM_BATTING_HBP) %>%
+  filter(TEAM_PITCHING_H < 7500) %>%
+  filter(TEAM_PITCHING_BB < 1500) %>%
+  filter(TEAM_PITCHING_SO < 2000) %>%
+  filter(TEAM_PITCHING_SO > 0) %>%
+  filter(TEAM_PITCHING_HR_SQRT > 0) %>%
+  filter(TEAM_BATTING_HR_SQRT > 0) %>%
+  filter(TEAM_BATTING_SO > 0)
+
+# Model with all features included
+mod1 <- lm(TARGET_WINS ~ TEAM_BASERUN_CS_SQRT + TEAM_BASERUN_SB_SQRT
+           + TEAM_BATTING_2B + TEAM_BATTING_3B_SQRT + TEAM_BATTING_BB + TEAM_BATTING_HR_SQRT
+           + TEAM_BATTING_HBP + TEAM_BATTING_H + TEAM_BATTING_SO
+           + TEAM_FIELDING_DP + TEAM_FIELDING_E_LOG
+           + TEAM_PITCHING_BB + TEAM_PITCHING_H + TEAM_PITCHING_HR_SQRT + TEAM_PITCHING_SO
+           + TEAM_BATTING_OB, data = complete_mlb)
+summary(mod1)
+
+par(mfrow=c(2,2))
+hist(mod1$residuals)
+plot(mod1$residuals ~ mod1$fitted.values)
+qqnorm(mod1$residuals)
+qqline(mod1$residuals)
+
+# Model based on removing high p-value predictors until best r-squared is reached
+mod2 <- lm(TARGET_WINS ~ TEAM_BASERUN_SB_SQRT
+           + TEAM_BATTING_2B + TEAM_BATTING_3B_SQRT + TEAM_BATTING_BB + TEAM_BATTING_HR_SQRT
+           + TEAM_BATTING_SO
+           + TEAM_FIELDING_DP + TEAM_FIELDING_E_LOG
+           + TEAM_PITCHING_BB + TEAM_PITCHING_H + TEAM_PITCHING_HR_SQRT + TEAM_PITCHING_SO
+           + TEAM_BATTING_OB, data = complete_mlb)
+summary(mod2)
+
+par(mfrow=c(2,2))
+hist(mod2$residuals)
+plot(mod2$residuals ~ mod2$fitted.values)
+qqnorm(mod2$residuals)
+qqline(mod2$residuals)
+
+# Model based on features with high correlation to TARGET_WINS
+mod3 <- lm(TARGET_WINS ~ TEAM_BATTING_OB + TEAM_BATTING_H
+           + TEAM_FIELDING_E_LOG + TEAM_PITCHING_H, data = complete_mlb)
+summary(mod3)
+
+par(mfrow=c(2,2))
+hist(mod3$residuals)
+plot(mod3$residuals ~ mod3$fitted.values)
+qqnorm(mod3$residuals)
+qqline(mod3$residuals)
+
+# Predicting on evaluation data using model 2
+eval <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw1/moneyball-evaluation-data.csv")
+
+eval <- eval %>%
+  mutate(TEAM_BATTING_3B_SQRT = sqrt(TEAM_BATTING_3B)) %>%
+  mutate(TEAM_BATTING_HR_SQRT = sqrt(TEAM_BATTING_HR)) %>%
+  mutate(TEAM_FIELDING_E_LOG = log(TEAM_FIELDING_E)) %>%
+  mutate(TEAM_BASERUN_CS_SQRT = sqrt(TEAM_BASERUN_CS)) %>%
+  mutate(TEAM_BASERUN_SB_SQRT = sqrt(TEAM_BASERUN_SB)) %>%
+  mutate(TEAM_PITCHING_HR_SQRT = sqrt(TEAM_PITCHING_HR))
+
+eval_temp <- mice(eval,
+                 m = 5,
+                 maxit = 10,
+                 method = "pmm",
+                 seed = 1234)
+complete_eval <- complete(eval_temp,1)
+
+complete_eval <- complete_eval %>%
+  mutate(TEAM_BATTING_OB = TEAM_BATTING_H + TEAM_BATTING_BB + TEAM_BATTING_HBP) %>%
+  filter(TEAM_PITCHING_H < 7500) %>%
+  filter(TEAM_PITCHING_BB < 1500) %>%
+  filter(TEAM_PITCHING_SO < 2000) %>%
+  filter(TEAM_PITCHING_SO > 0) %>%
+  filter(TEAM_PITCHING_HR_SQRT > 0) %>%
+  filter(TEAM_BATTING_HR_SQRT > 0) %>%
+  filter(TEAM_BATTING_SO > 0)
+
+predict(mod2,complete_eval)
+```
