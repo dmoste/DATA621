@@ -164,7 +164,13 @@ pre <- precision(data, data$class, data$scored.class)
 sens <- sensitivity(data, data$class, data$scored.class)
 spec <- specificity(data, data$class, data$scored.class)
 f1 <- f1_score(data, data$class, data$scored.class)
-roc(data, data$class, data$scored.probability)
+roc_curve <- roc(data, data$class, data$scored.probability)
+
+# ROC plot
+roc_curve[1]
+
+# AUC
+roc_curve[2]
 
 # Convert class and scored.class into factors for use with caret
 table_data$class <- as.factor(table_data$class)
@@ -189,4 +195,4 @@ caret::specificity(data = table_data$scored.class,
 rocCurve <- pROC::roc(response = data$class,
                       predictor = data$scored.probability)
 auc(rocCurve)
-plot(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
