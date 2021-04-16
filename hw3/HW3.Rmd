@@ -86,18 +86,13 @@ e. Combine variables (such as ratios or adding or multiplying) to create new var
 missmap(crimetrain)
 
 #transforming the data 
-#"zn" to binary, converting "age" to binary, and "black variable into a proportion, log transform age and Istat 
-#add quadratic term to zn, rad, and nox 
+#"zn" to binary, converting "age" to binary, log transform  Istat 
 
 crimetraintrans <- crimetrain %>%
-  mutate(age = log(age),
+  mutate(age = age^2,
          lstat = log(lstat),
-         zn = log(zn),
-         rad = rad^2,
-         nox = I(nox^2))
+         zn = zn^2,)
 
-
-h_data <- my_transform(crimetraintrans)
 ```
 
 
@@ -108,14 +103,41 @@ Using the training data, build at least three different binary logistic regressi
 Be sure to explain how you can make inferences from the model, as well as discuss other relevant model output. Discuss the coefficients in the models, do they make sense? Are you keeping the model even though it is counter intuitive? Why? The boss needs to know.
 
 ```{r}
-model1 <- glm(target ~ ., family = "binomial", data = crimetrain)
+model1 <- glm(target ~ ., family = "binomial"(link="logit"), data = crimetrain)
 summary(model1)
 
-model2<- glm(target ~ ., family = "binomial", data = h_data)
+model2<- glm(target ~ ., family = "binomial"(link="logit"), data = crimetraintrans)
 summary(model2)
 
 model3 <- stepAIC(model1, direction = "both", trace = FALSE)
 summary(model3)
+
+# Getting the confusion matix, roc curve for each model 
+#model 1 
+
+
+model1conf <- confusionMatrix(as.factor(as.integer(fitted(model1) > .5)), as.factor(model1$y), positive = "1")
+rocmodel1 <- roc(crimetrain$target,  predict(model1, crimetrain))
+
+#model 2 
+model2conf <- confusionMatrix(as.factor(as.integer(fitted(model2) > .5)), as.factor(model2$y), positive = "1")
+rocmodel2 <- roc(crimetrain$target,  predict(model2, crimetrain))
+
+#model3 
+model3conf <- confusionMatrix(as.factor(as.integer(fitted(model3) > .5)), as.factor(model3$y), positive = "1")
+
+rocmodel3 <- roc(crimetrain$target,  predict(model3, crimetrain))
+
+
+# plotting roc curve of model 2
+plot(roc(crimetrain$target,  predict(model2, crimetrain, interval = "prediction")), print.auc = TRUE)
+
+crimeeval <- crimeeval %>% 
+  mutate(chas = as.factor(chas))
+
+# prediction
+predict <- predict(model2, crimeeval, interval = "prediction")
+eval <- table(as.integer(predict > .5))
 
 
 ```
