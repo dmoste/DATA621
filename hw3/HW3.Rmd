@@ -1,148 +1,319 @@
 ---
-title: "Data 621 HW3"
+title: "DATA 621 - Homework 3"
 author: "Vanita Thompson, David Moste, Sadia Perveen"
-date: "4/13/2021"
-output: html_document
+date: "April 13, 2021"
+output:
+  word_document: default
+  pdf_document: default
+  tidy: yes
+  html_document:
+    highlight: pygments
+    theme: cerulean
+code_folding: hide
 ---
 
-```{r}
-install.packages("tidyverse", "psych", )
-library(tidyverse)
-library(psych)
-library(corrplot)
-library(RColorBrewer)
+
+
+```{r setup, include=FALSE}
+
+options(warn = -1)
+
+suppressMessages(require(plotly))
 library(knitr)
-library(MASS)
-library(caret)
-library(kableExtra)
-library(ResourceSelection)
-library(pROC)
-library(kableExtra)
-library(reshape2)
-library(Amelia)
-library(corrplot)
+suppressMessages(library(RCurl))
+suppressMessages(library(plyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(plotly))
+suppressMessages(require(scatterplot3d))
+suppressMessages(library(Amelia))
+suppressMessages(library(ROCR))
+suppressMessages(library(pROC))
+suppressMessages(library(corrplot));
+
+crime <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw3/crime-training-data_modified.csv", header = TRUE, sep = ",")
+
+crime_evaluation <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw3/crime-evaluation-data_modified.csv", header = TRUE, sep = ",")
+
+
 ```
 
-Write Up:
-1. DATA EXPLORATION (25 Points)
-Describe the size and the variables in the crime training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren’t doing
-your job. Some suggestions are given below. Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas.
-a. Mean / Standard Deviation / Median
-b. Bar Chart or Box Plot of the data
-c. Is the data correlated to the target variable (or to other variables?) d. Are any of the variables missing and need to be imputed/“fixed”?
+
+
+## 1. Data Exploration:
+
+Analyzing the overall data to see if there is any discrepancies there as missing data or there is any need for data transformation
+
+
+```{R}
+names(crime)
+str(crime)
+dim(crime)
+kable(summary(crime))
+
+```
+
+### We observed that:
+
+* The crime dataset contains 13 variables, with 466 observations
+
+* There are no missing values.
+
+* The Minimum, Quatiles and Maximum values.
+
+* Since this is logistic regression we don't have to worry about the normal distribution of data and no transformation is needed
+
+
+## 2. Data Preparation
+
+### There is no major data preparation effort is needed as this is a logistic regression and more over there is no missing data in the dataset.
+
 
 ```{r}
-crimetrain <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/xid-418692259_1.csv")
-crimeeval <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/crime-evaluation-data_modified.csv")
-
-
-# Summary of data 
-summary(crimetrain)
-head(crimetrain)
-
-crimetrain %>% head() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
-
-crimetrain %>% summary() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
-
-crimetrain %>% describe() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
-
-
-
-# Histograms 
-
-for( i in 1:13){
-  hist(crimetrain[,i], main = colnames(crimetrain)[i], col = 'yellow')
-}
-
-#boxplots 
-
-for( i in 1:13){
-  boxplot(crimetrain[,i], main = colnames(crimetrain)[i], col = 'yellow')
-}
-
-#correlation plot 
-
-cor_train = cor(crimetrain,  use = "na.or.complete")
-corrplot(cor_train)
-
+## checkin no missing data
+sapply(crime, function(x) sum(is.na(x)))
+sapply(crime_evaluation, function(x) sum(is.na(x)))
 
 ```
 
+## 3. Build Models
+### Consdering target as a response variable (Independent variable), lets pair it with complete data set and also find the best fit model using GLM package
 
+```{R}
+pairs(crime, col=crime$target)
 
+```
 
+### Simple regression model
 
-2. DATA PREPARATION (25 Points)
-Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations.
-a. Fix missing values (maybe with a Mean or Median value)
-b. Create flags to suggest if a variable was missing
-c. Transform data by putting it into buckets
-d. Mathematical transforms such as log or square root (or, use Box-Cox)
-e. Combine variables (such as ratios or adding or multiplying) to create new variables
+```{R}
+fit <- glm(target ~., data = crime) 
+summary(fit)
+par(mfrow=c(2,2))
+plot(fit)
+```
+
+Simple regression model using glm package shows that the p value for zn,indus,chas, rm,dis, tax, ptratio,black ,lstat are more than the significance value of 0.05, so they are not contributing much to the target (independent variable)
+
+So, lets move to the logistic regression for binomial distribution where we can see the variables interdependent on the independent variable target and get teh best fit subset of the crime dataset
+
+### Using Logistics regression for a better results as
 
 ```{r}
-#check for any missing values 
 
-missmap(crimetrain)
+crimetarget <- glm(target~., family=binomial(link='logit'),data=crime)
 
-#transforming the data 
-#"zn" to binary, converting "age" to binary, log transform  Istat 
-
-crimetraintrans <- crimetrain %>%
-  mutate(age = age^2,
-         lstat = log(lstat),
-         zn = zn^2,)
+summary(crimetarget)
+par(mfrow=c(2,2))
+plot(crimetarget)
 
 ```
 
+The variables like zn, indus, chas,rm and lstat are not statistically significant due to their p-value being greater than statiscally accepted p-value of 0.05, So we have a scope to refine the model without these variables and repeat the best fit logistic regression and build a preditive model.
+
+Null deviance is 645.88 to imply if all other parameters are held constant(control or not included), the estimate would be 645.88, while the Residual deviance of 192.05 means with the inclusion of other estimator, we expect the deviance to be 192.04.
+
+AIC is 218.05 and signifies the best fit quality of the model compared to other similar model available. If we are comparing with other models, best model should have lowest deviance and AIC value.
+
+The greater the difference between the Null deviance and Residual deviance, the better.
 
 
+### The Analysis of Variance (ANOVA)
+To confirm if we have concluded the significance of varaibles correctly or not
 
-3. BUILD MODELS (25 Points)
-Using the training data, build at least three different binary logistic regression models, using different variables (or the same variables with different transformations). You may select the variables manually, use an approach such as Forward or Stepwise, use a different approach, or use a combination of techniques. Describe the techniques you used. If you manually selected a variable for inclusion into the model or exclusion into the model, indicate why this was done.
-Be sure to explain how you can make inferences from the model, as well as discuss other relevant model output. Discuss the coefficients in the models, do they make sense? Are you keeping the model even though it is counter intuitive? Why? The boss needs to know.
+```{R}
+anova(crimetarget, test="Chisq")
+```
+
+It shows that the chas, age and lstat has no significance and rest all are contributing towards target variable. So lets run the best fit model keeping significant variables.
+
 
 ```{r}
-model1 <- glm(target ~ ., family = "binomial"(link="logit"), data = crimetrain)
-summary(model1)
+crime2 <- subset(crime, select = -c(zn,indus,chas,rm,lstat))
 
-model2<- glm(target ~ ., family = "binomial"(link="logit"), data = crimetraintrans)
-summary(model2)
+crimetarget2 <- glm(target~., family=binomial(link='logit'),data=crime2)
+summary(crimetarget2)
+par(mfrow=c(2,2))
+plot(crimetarget2)
 
-model3 <- stepAIC(model1, direction = "both", trace = FALSE)
-summary(model3)
+anova(crimetarget2, test="Chisq")
 
-# Getting the confusion matix, roc curve for each model 
-#model 1 
+```
+
+age, dis are not significantly contributing to the target variable as it's p value is more than the significance value, so lets remove that from the next iteration 
+
+```{r}
+crime3 <- subset(crime2, select = -c(age, dis))
+
+crimetarget3 <- glm(target~., family=binomial(link='logit'),data=crime3)
+summary(crimetarget3)
+par(mfrow=c(2,2))
+plot(crimetarget3)
+
+anova(crimetarget3, test="Chisq")
+
+```
+
+crimetarget3 model has nox,black, rad, tax, ptratio and medv as the significant variables and contrbuting to the target as key variable predicting crime in that area
+
+## 4. Selection Models
+
+## Predictive model for crimetarget model
+```{R}
+
+pred <- predict(crimetarget, type="response")
+pred2 <- prediction(pred, crime$target)
+pred3 <- performance(pred2, measure = "tpr", x.measure = "fpr")
+plot(pred3)
+```
+
+Above is the plot for Sensitivity and Specitivity for the city target, while the value below is it AUC.
+
+```{R}
+auc <- performance(pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
 
 
-model1conf <- confusionMatrix(as.factor(as.integer(fitted(model1) > .5)), as.factor(model1$y), positive = "1")
-rocmodel1 <- roc(crimetrain$target,  predict(model1, crimetrain))
+### Predictions and Accuracy for crimetarget model
 
-#model 2 
-model2conf <- confusionMatrix(as.factor(as.integer(fitted(model2) > .5)), as.factor(model2$y), positive = "1")
-rocmodel2 <- roc(crimetrain$target,  predict(model2, crimetrain))
+```{r}
 
-#model3 
-model3conf <- confusionMatrix(as.factor(as.integer(fitted(model3) > .5)), as.factor(model3$y), positive = "1")
+target_predicts <- predict(crimetarget,newdata=subset(crime,select=c(1,2,3,4,5,6,7,8,9,10,11,12,13)),type='response')
+target_predicts <- ifelse(target_predicts > 0.5,1,0)
 
-rocmodel3 <- roc(crimetrain$target,  predict(model3, crimetrain))
+attach(crime)
+
+CM1<-table(target_predicts, target)
+Pos_Pos=CM1[1,1]
+Pos_Neg=CM1[1,2]
+Neg_Pos=CM1[2,1]
+Neg_Neg=CM1[2,2]
+
+Specificity= Neg_Neg/(Pos_Neg+Neg_Neg)
+Sensitivity= Pos_Pos/(Pos_Pos+Neg_Pos)
+Pos_Pred_Val= Pos_Pos/(Pos_Pos+Pos_Neg)
+Neg_Pred_Val=Neg_Neg/(Neg_Pos+Neg_Neg)
+
+misClasificError <- mean(target_predicts != target)
+Accuracy=1-misClasificError
+
+print(paste('Accuracy',1-misClasificError))
+
+BestFitModel1<- data.frame(auc,Specificity,Sensitivity,Accuracy,Pos_Pred_Val,Neg_Pred_Val)
+
+```
+
+## Predictive model for crimetarget2 model
+
+```{R}
+
+pred <- predict(crimetarget2, type="response")
+pred2 <- prediction(pred, crime$target)
+pred3 <- performance(pred2, measure = "tpr", x.measure = "fpr")
+plot(pred3)
+```
+
+Above is the plot for Sensitivity and Specitivity for the city target, while the value below is it AUC.
+
+```{R}
+auc <- performance(pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
 
 
-# plotting roc curve of model 2
-plot(roc(crimetrain$target,  predict(model2, crimetrain, interval = "prediction")), print.auc = TRUE)
+### Predictions and Accuracy for crimetarget2 model
 
-crimeeval <- crimeeval %>% 
-  mutate(chas = as.factor(chas))
+```{R}
 
-# prediction
-predict <- predict(model2, crimeeval, interval = "prediction")
-eval <- table(as.integer(predict > .5))
 
+target_predicts <- predict(crimetarget2,newdata=crime,type='response')
+target_predicts <- ifelse(target_predicts > 0.5,1,0)
+
+attach(crime)
+
+CM1<-table(target_predicts, target)
+Pos_Pos=CM1[1,1]
+Pos_Neg=CM1[1,2]
+Neg_Pos=CM1[2,1]
+Neg_Neg=CM1[2,2]
+
+Specificity= Neg_Neg/(Pos_Neg+Neg_Neg)
+Sensitivity= Pos_Pos/(Pos_Pos+Neg_Pos)
+Pos_Pred_Val= Pos_Pos/(Pos_Pos+Pos_Neg)
+Neg_Pred_Val=Neg_Neg/(Neg_Pos+Neg_Neg)
+
+misClasificError <- mean(target_predicts != target)
+Accuracy=1-misClasificError
+
+print(paste('Accuracy',1-misClasificError))
+
+BestFitModel2<- data.frame(auc,Specificity,Sensitivity,Accuracy,Pos_Pred_Val,Neg_Pred_Val)
 
 ```
 
 
-4. SELECT MODELS (25 Points)
-Decide on the criteria for selecting the best binary logistic regression model. Will you select models with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your model.
-• For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions using the evaluation data set
+## Predictive model for crimetarget3 model
+```{R}
+
+pred <- predict(crimetarget3, type="response")
+pred2 <- prediction(pred, crime$target)
+pred3 <- performance(pred2, measure = "tpr", x.measure = "fpr")
+plot(pred3)
+```
+
+Above is the plot for Sensitivity and Specitivity for the city target, while the value below is it AUC.
+
+```{R}
+auc <- performance(pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+### Predictions and Accuracy.
+
+```{R}
+
+
+target_predicts <- predict(crimetarget3,newdata=crime,type='response')
+target_predicts <- ifelse(target_predicts > 0.5,1,0)
+
+attach(crime)
+
+CM1<-table(target_predicts, target)
+Pos_Pos=CM1[1,1]
+Pos_Neg=CM1[1,2]
+Neg_Pos=CM1[2,1]
+Neg_Neg=CM1[2,2]
+
+Specificity= Neg_Neg/(Pos_Neg+Neg_Neg)
+Sensitivity= Pos_Pos/(Pos_Pos+Neg_Pos)
+Pos_Pred_Val= Pos_Pos/(Pos_Pos+Pos_Neg)
+Neg_Pred_Val=Neg_Neg/(Neg_Pos+Neg_Neg)
+
+misClasificError <- mean(target_predicts != target)
+Accuracy=1-misClasificError
+
+print(paste('Accuracy',1-misClasificError))
+
+BestFitModel3<- data.frame(auc,Specificity,Sensitivity,Accuracy,Pos_Pred_Val,Neg_Pred_Val)
+```
+
+##Compare the Models to choose the best
+
+```{r}
+
+CompareBestFitModel=rbind(BestFitModel1,BestFitModel2,BestFitModel3)
+colnames(CompareBestFitModel)=c("AUC","Specificity","Sensitivity","Accuracy","Pos_Pred_Val","Neg_Pred_Val")
+rownames(CompareBestFitModel)=c("Model1","Model2","Model3")
+CompareBestFitModel
+
+```
+
+## Conclusion
+
+From the above analysis, we can deduce that the AUC ( Area Under Curve) for all the three models are very close to 1, which indicate that the model 1 is more specificity, sensitivity and accuracy.
+
+And the nox, rad, tax, pratio, black and medv contributed significantly to the increasing crime rate of the city under observation.
