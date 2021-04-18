@@ -1,0 +1,180 @@
+---
+title: "Data 621 HW3"
+author: "Vanita Thompson, David Moste, Sadia Perveen"
+date: "4/13/2021"
+output: html_document
+---
+
+```{r}
+install.packages("tidyverse", "psych", )
+library(tidyverse)
+library(psych)
+library(corrplot)
+library(RColorBrewer)
+library(knitr)
+library(MASS)
+library(caret)
+library(kableExtra)
+library(ResourceSelection)
+library(pROC)
+library(kableExtra)
+library(reshape2)
+library(Amelia)
+library(corrplot)
+```
+
+Write Up:
+1. DATA EXPLORATION (25 Points)
+Describe the size and the variables in the crime training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren’t doing
+your job. Some suggestions are given below. Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas.
+a. Mean / Standard Deviation / Median
+b. Bar Chart or Box Plot of the data
+c. Is the data correlated to the target variable (or to other variables?) d. Are any of the variables missing and need to be imputed/“fixed”?
+
+```{r}
+crimetrain <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/xid-418692259_1.csv")
+crimeeval <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/crime-evaluation-data_modified.csv")
+
+
+# Summary of data 
+summary(crimetrain)
+head(crimetrain)
+
+crimetrain %>% head() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
+
+crimetrain %>% summary() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
+
+crimetrain %>% describe() %>% kable() %>% kableExtra::kable_styling(full_width = F, html_font = "Cambria")
+
+
+
+# Histograms 
+
+for( i in 1:13){
+  hist(crimetrain[,i], main = colnames(crimetrain)[i], col = 'yellow')
+}
+
+#boxplots 
+
+for( i in 1:13){
+  boxplot(crimetrain[,i], main = colnames(crimetrain)[i], col = 'yellow')
+}
+
+#correlation plot 
+
+cor_train = cor(crimetrain,  use = "na.or.complete")
+corrplot(cor_train)
+
+
+```
+
+
+
+
+
+2. DATA PREPARATION (25 Points)
+Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations.
+a. Fix missing values (maybe with a Mean or Median value)
+b. Create flags to suggest if a variable was missing
+c. Transform data by putting it into buckets
+d. Mathematical transforms such as log or square root (or, use Box-Cox)
+e. Combine variables (such as ratios or adding or multiplying) to create new variables
+
+```{r}
+#check for any missing values 
+
+missmap(crimetrain)
+
+glimpse(crimetrain)
+
+#transforming the data- We Will log transform the data and view the histograms again. 
+
+
+crimetraintrans <- crimetrain %>%
+  mutate(age = log(age),
+         lstat = log(lstat),
+         indus = log(indus),
+         nox = log(nox),
+         rm = log(rm),
+         dis = log(dis),
+         rad = log(rad),
+         tax = log(tax),
+         ptratio = log(ptratio),
+         medv = log(medv),
+         )
+
+
+for( i in 1:12){
+  hist(crimetraintrans[,i], main = colnames(crimetraintrans)[i], col = 'purple')
+}
+
+
+```
+
+
+
+
+3. BUILD MODELS (25 Points)
+Using the training data, build at least three different binary logistic regression models, using different variables (or the same variables with different transformations). You may select the variables manually, use an approach such as Forward or Stepwise, use a different approach, or use a combination of techniques. Describe the techniques you used. If you manually selected a variable for inclusion into the model or exclusion into the model, indicate why this was done.
+Be sure to explain how you can make inferences from the model, as well as discuss other relevant model output. Discuss the coefficients in the models, do they make sense? Are you keeping the model even though it is counter intuitive? Why? The boss needs to know.
+
+```{r}
+model1 <- glm(target ~ ., family = "binomial"(link="logit"), data = crimetrain)
+summary(model1)
+
+model2<- glm(target ~ ., family = "binomial", data = crimetraintrans)
+summary(model2)
+
+model3 <- stepAIC(model2, direction = "both", trace = FALSE)
+summary(model3)
+
+model4 <- stepAIC(model3, direction = "both", trace = FALSE)
+summary(model4)
+
+summary(model4$fitted.values)
+hist(model4$fitted.values)
+
+model2$aic
+model3$aic
+
+# Getting the confusion matix, roc curve for each model 
+#model 1 
+
+
+model1conf <- confusionMatrix(as.factor(as.integer(fitted(model1) > .5)), as.factor(model1$y), positive = "1")
+rocmodel1 <- roc(crimetrain$target,  predict(model1, crimetrain))
+
+#model 2 
+model2conf <- confusionMatrix(as.factor(as.integer(fitted(model2) > .5)), as.factor(model2$y), positive = "1")
+rocmodel2 <- roc(crimetrain$target,  predict(model2, crimetrain))
+
+#model3 
+model3conf <- confusionMatrix(as.factor(as.integer(fitted(model3) > .5)), as.factor(model3$y), positive = "1")
+
+rocmodel3 <- roc(crimetrain$target,  predict(model3, crimetrain))
+
+
+# plotting roc curve of model 2
+plot(roc(crimetrain$target,  predict(model2, crimetrain, interval = "prediction")), print.auc = TRUE)
+
+
+
+```
+
+
+4. SELECT MODELS (25 Points)
+Decide on the criteria for selecting the best binary logistic regression model. Will you select models with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your model.
+• For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions using the evaluation data set
+
+
+```{r}
+
+#crimeeval <- crimeeval %>% 
+ # mutate(chas = as.factor(chas))
+
+
+# prediction
+predict <- predict(model2, crimeeval, interval = "prediction")
+eval <- table(as.integer(predict > .5))
+```
+
