@@ -1,0 +1,197 @@
+---
+title: "DATA 621 - Homework 4"
+author: "Vanita Thompson, David Moste, Sadia Perveen"
+date: "April 13, 2021"
+output:
+  pdf_document: default
+  word_document: default
+  tidy: yes
+  html_document:
+    highlight: pygments
+    theme: cerulean
+code_folding: hide
+---
+
+
+
+```{r setup, include=FALSE}
+install.packages("tidyverse", "psych", )
+library(tidyverse)
+library(psych)
+library(corrplot)
+library(RColorBrewer)
+library(knitr)
+library(MASS)
+library(caret)
+library(kableExtra)
+library(ResourceSelection)
+library(pROC)
+library(kableExtra)
+library(reshape2)
+library(Amelia)
+library(corrplot)
+
+install.packages("mice")
+library(mice)
+
+insurance <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/insurance-training.csv", header = TRUE, sep = ",")
+
+insurance_evaluation <- read.csv("https://raw.githubusercontent.com/sperveen/DATA621/main/insurance-evaluation.csv", header = TRUE, sep = ",")
+
+
+```
+
+
+
+## 1. Data Exploration:
+
+
+```{R}
+names(insurance)
+str(insurance)
+dim(insurance)
+kable(summary(insurance))
+
+# The data needs to be cleaned up. We have some variables with $ and some variables with Z_ that needs to be removed. 
+
+insurance$MSTATUS <- gsub('z_', '', insurance$MSTATUS)
+insurance$SEX <- gsub('z_', '', insurance$SEX)
+insurance$EDUCATION <- gsub('z_', '', insurance$EDUCATION)
+insurance$JOB <- gsub('z_', '', insurance$JOB)
+insurance$CAR_TYPE <- gsub('z_', '', insurance$CAR_TYPE)
+insurance$URBANICITY <- gsub('z_', '', insurance$URBANICITY)
+insurance$INCOME <- gsub('[\\$,]', '', insurance$INCOME)
+insurance$HOME_VAL <- gsub('[\\$,]', '', insurance$HOME_VAL)
+insurance$BLUEBOOK <- gsub('[\\$,]', '', insurance$BLUEBOOK)
+insurance$OLDCLAIM <- gsub('[\\$,]', '', insurance$OLDCLAIM)
+
+
+insurancetrain <- insurance %>% 
+  dplyr::select(-INDEX) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG),
+         KIDSDRIV = as.factor(KIDSDRIV),
+         HOMEKIDS = as.factor(HOMEKIDS),
+         PARENT1 = as.factor(PARENT1),
+         CLM_FREQ = as.factor(CLM_FREQ),
+         OLDCLAIM = as.integer(OLDCLAIM),
+         BLUEBOOK = as.integer(BLUEBOOK),
+         HOME_VAL = as.integer(HOME_VAL),
+         INCOME = as.integer(INCOME))
+
+#boxplot, histogram and correlations 
+ggplot(melt(insurancetrain), aes(x=factor(variable), y=value)) + facet_wrap(~variable, scale="free") + geom_boxplot()
+
+ggplot(melt(insurancetrain), aes(x=value)) + facet_wrap(~variable, scale="free") + geom_histogram(bins=50)
+
+cor1 <- data.frame(lapply(insurancetrain, function(x) as.numeric(as.factor(x))))
+
+c <- cor(cor1, method="pearson", use="complete.obs")
+corrplot(c, method="circle")
+
+
+```
+
+### We observed that:
+
+* The crime dataset contains 26 variables, with 8161 observations
+
+* There are missing values.
+
+* The Minimum, Quatiles and Maximum values.
+
+
+## 2. Data Preparation
+
+
+```{r}
+## checkin no missing data
+sapply(insurancetrain, function(x) sum(is.na(x)))
+
+insurancetraining2 <- mice(insurancetrain, m=5, maxit = 5, method = 'pmm')
+insurancetraining2 <- complete(insurancetraining2)
+summary(insurancetraining2)
+sapply(insurancetraining2, function(x) sum(is.na(x)))
+
+
+#same for eval set 
+sapply(insurance_evaluation, function(x) sum(is.na(x)))
+insuranceeval2 <- mice(insurance_evaluation, m=5, maxit = 5, method = 'pmm')
+insuranceeval2 <- complete(insuranceeval2)
+insuranceeval2 <- data.frame(lapply(insuranceeval2, function(x) as.numeric(as.factor(x))))
+summary(insuranceeval2)
+sapply(insurancetraining2, function(x) sum(is.na(x)))
+
+```
+
+## 3. Build Models
+
+```{R}
+model1 <- lm(TARGET_AMT ~ ., insurancetraining2)
+summary(model1)
+par(mfrow=c(2,2))
+plot(model1)
+
+model2 <- stepAIC(model1, direction = "both", trace = FALSE)
+summary(model2)
+par(mfrow=c(2,2))
+plot(model2)
+
+
+#box-cox 
+insurancebc <- preProcess(insurancetraining2, c("BoxCox"))
+insurancebc_transformed <- predict(insurancebc, insurancetraining2)
+model4 <- lm(TARGET_AMT ~ ., insurancebc_transformed)
+summary(model4)
+
+glm_data <- data.frame(lapply(insurancetraining2, function(x) as.numeric(as.factor(x)))) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG)) 
+glm_data1 <- glm_data %>% 
+  dplyr::select(-"TARGET_AMT")
+
+model5 <- glm(TARGET_FLAG ~ ., family = "binomial", glm_data1)
+summary(model5)
+par(mfrow=c(2,2))
+plot(model5)
+
+model6 <- stepAIC(model5, direction = "both", trace = FALSE)
+summary(model6)
+par(mfrow=c(2,2))
+plot(model5)
+
+#box-cox 
+glm_data12 <- preProcess(glm_data1, c("BoxCox"))
+glmbc_transformed <- predict(glm_data12, glm_data1)
+
+
+
+
+model7 <- glm(TARGET_FLAG ~ ., family = "binomial", glmbc_transformed)
+summary(model7)
+```
+
+
+
+```{R}
+# Getting the confusion matix, roc curve for each model 
+
+
+confusionMatrix1 <- confusionMatrix(as.factor(as.integer(fitted(model5) > .5)), as.factor(model5$y), positive = "1")
+rocmodel1 <- roc(glm_data$TARGET_FLAG,  predict(model5, glm_data))
+
+
+confusionMatrix2  <- confusionMatrix(as.factor(as.integer(fitted(model6) > .5)), as.factor(model6$y), positive = "1")
+rocmodel2 <- roc(glm_data$TARGET_FLAG,  predict(model6, glm_data))
+
+
+
+confusionMatrix3  <- confusionMatrix(as.factor(as.integer(fitted(model7) > .5)), as.factor(model7$y), positive = "1")
+rocmodel3 <- roc(glm_data$TARGET_FLAG,  predict(model7, glm_data))
+
+
+# predict
+
+predict <- predict(model5, insuranceeval2, interval = "prediction")
+eval <- table(as.integer(predict > .5))
+eval
+
+```
