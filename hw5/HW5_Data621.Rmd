@@ -1,0 +1,655 @@
+---
+title: "Data 621 Homewor 5 "
+author: "Vanita Thompson, David Moste, Sadia Perveen"
+date: "May 6, 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_download: yes
+    code_folding: hide
+    highlight: pygments
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+
+In this homework assignment, you will explore, analyze and model a dataset containing information on approximately 12,000 commercially available wines. 
+
+Discuss the coefficients in the models and decide on the criteria for selecting the best count regression model. For the count regression model, will you use a metric such as AIC, average squared error. 
+
+### About the Data
+
+The variables are mostly related to the chemical properties of the wine being sold. The response variable is the number of sample cases of wine that were purchased by wine distribution companies after  sampling a  wine. These cases would be used to provide tasting samples to restaurants and wine stores around the United States. The more sample cases purchased, the more likely is a wine to be sold at a high end restaurant. 
+
+Below is a short description of the variables of interest in the data set:
+
+INDEX: Identification Variable (do not use)
+TARGET: Number of Cases Purchased
+AcidIndex: Proprietary method of testing total acidity of wine by using a weighted average
+Alcohol: Alcohol Content
+Chlorides: Chloride content of wine
+CitricAcid: Citric Acid Content
+Density: Density of Wine
+FixedAcidity: Fixed Acidity of Wine
+FreeSulfurDioxide: Sulfur Dioxide content of wine
+LabelAppeal: Marketing Score indicating the appeal of label design for consumers. High numbers suggest customers like the label design. Negative numbers suggest customes don't like the design.
+ResidualSugar: Residual Sugar of wine
+STARS: Wine rating by a team of experts. 4 Stars = Excellent, 1 Star = Poor
+Sulphates: Sulfate conten of wine
+TotalSulfurDioxide: Total Sulfur Dioxide of Wine
+VolatileAcidity: Volatile Acid content of wine
+pH: pH of wine
+
+### Objective
+
+A large wine manufacturer is studying the data in order to predict the number of wine cases ordered based upon the wine characteristics. If the wine manufacturer can predict the number of cases, then that manufacturer will be able to adjust their wine offering to maximize sales.
+
+THe objective is to build a count regression Model to predict the number of cases of wine that will be sold given certain properties of the wine.
+
+## Load Libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(ggcorrplot)
+library(dplyr)
+library(caret)
+library(MASS)
+library(imputeTS) # Used for imputing missing values
+library(nortest) # Test for normality
+library(moments) # Skewness and kurtosis
+library(glmnet)
+library(mltest)
+library(car)
+library(rpart)
+library(rpart.plot)
+library(pscl)
+library(boot)
+library(broom) # glance function
+library(WVPlots) # Gini Curve plot
+library(modelr) # rsquare function
+```
+
+## Load the training and evaluation data sets
+I will use the training data to train the model and use the evaluation data set to test/evaluate the model.
+
+```{r}
+rawwine <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw5/wine-training-data.csv", header=T, sep = ",")
+rawwine_evaluation <- read.csv("https://raw.githubusercontent.com/dmoste/DATA621/master/hw5/wine-evaluation-data.csv", header=T, sep = ",")
+```
+
+## Data Exploration
+
+### Descriptive Statistics
+
+We can start exploring our training data set by looking at basic descriptive statistics. 
+Look at the training dataset structure and drop the Index variable
+
+```{r}
+wine = subset(rawwine, select = -c(ï..INDEX))
+str(wine) 
+```
+The training data set has 12,795 observations with 15 variables. All the variables are numeric/integer.
+
+Look at the evaluation dataset structure and drop the TARGET variables. The TARGET Variable was empty and needed to be predicted at the end. 
+
+I do not need it now.
+```{r}
+wine_evaluation = subset(rawwine_evaluation, select = -c(TARGET))
+str(wine_evaluation)
+```
+The evaluation data set has 3,335 observations with 14 variables; all the variables are numerical/integers.
+
+Look at descriptive statistics for both datasets.
+
+```{r}
+summary(wine)
+```
+
+```{r}
+summary(wine_evaluation)
+```
+
+With the descriptive statistics, we are able to see mean, standard deviation, median, min, max values. 
+
+## Data Preparation
+
+In this section, we will prepare the dataset for count regression modeling.  Logistic regression does not make many of the key assumptions of linear regression and general linear models that are based on ordinary least squares algorithms – particularly regarding linearity, normality, homoscedasticity, and measurement level.
+
+### Missing Values
+
+Looking for missing values
+
+```{r}
+colSums(is.na(wine))
+colSums(is.na(wine_evaluation))
+```
+
+The data set shows several missing values. 
+
+```{r, message=FALSE}
+wineclean <- na_mean(wine, option = "mean")
+wine_evaluationclean <- na_mean(wine_evaluation, option = "mean")
+```
+
+Let's check again!
+
+```{r}
+colSums(is.na(wineclean))
+colSums(is.na(wine_evaluationclean))
+```
+
+No more missing values.
+
+### Check for Normality
+
+There are specific methods for testing normality but these should be used in conjunction with either a histogram or a Q-Q plot.  The Kolmogorov-Smirnov test and the Shapiro-Wilk’s test whether the underlying distribution is normal.  Both tests are sensitive to outliers and are influenced by sample size. 
+
+**Visual Inspection**
+
+Let's look at some interesting part of the data by exploring the TARGET, pH, Alcohol and STARS variables
+
+Wine - Target
+
+```{r}
+mean = mean(wineclean$TARGET)
+  sd = sd(wineclean$TARGET)
+hist(wineclean$TARGET, probability = TRUE)
+x <- 0:8
+y <- dnorm(x = x, mean = mean, sd = sd)
+lines(x = x, y = y, col = "blue") #The Target distribution is hardly normal!
+```
+ 
+ Wine - pH
+ 
+```{r}
+mean = mean(wineclean$pH)
+  sd = sd(wineclean$pH)
+hist(wineclean$pH, probability = TRUE)
+x <- 0:7
+y <- dnorm(x = x, mean = mean, sd = sd)
+lines(x = x, y = y, col = "blue") #The pH distribution is not normal!
+```
+
+Wine - Alcohol
+
+```{r}
+mean = mean(wineclean$Alcohol)
+  sd = sd(wineclean$Alcohol)
+hist(wineclean$Alcohol, probability = TRUE)
+x <- -4.5:27
+y <- dnorm(x = x, mean = mean, sd = sd)
+lines(x = x, y = y, col = "blue") #The alcohol distribution seems normal!
+```
+
+Wine - STARS
+
+```{r}
+mean = mean(wineclean$STARS)
+  sd = sd(wineclean$STARS)
+hist(wineclean$STARS, probability = TRUE)
+x <- 0:4
+y <- dnorm(x = x, mean = mean, sd = sd)
+lines(x = x, y = y, col = "blue") # Doesn't look  normal here!
+```
+
+```{r}
+qqPlot(wineclean$TARGET)
+qqnorm(wineclean$TARGET,pch = 1, cex = 0.5)
+qqline(wineclean$TARGET, col = "red", lwd = 1)
+qqPlot(wineclean$pH)
+qqnorm(wineclean$pH,pch = 1, cex = 0.5)
+qqline(wineclean$pH, col = "red", lwd = 1)
+qqPlot(wineclean$Alcohol)
+qqnorm(wineclean$Alcohol,pch = 1, cex = 0.5)
+qqline(wine$Alcohol, col = "red", lwd = 1)
+qqPlot(wineclean$STARS)
+qqnorm(wineclean$STARS,pch = 1, cex = 0.5)
+qqline(wineclean$STARS, col = "red", lwd = 1)
+```
+
+**Normality Significance Test**
+
+The central limit theorem tells us that no matter what distribution things have, the sampling distribution tends to be normal if the sample is large enough (n > 30).
+
+**The Anderson-Darling Test**
+
+```{r}
+ad.test(wineclean$TARGET)
+ad.test(wineclean$pH)
+ad.test(wineclean$Alcohol)
+ad.test(wineclean$STARS)
+```
+
+Since the p-value is less than $\alpha = 0.05$, there is a rare chance that the data came from a normal distribution. The Anderson-Darling test, while having excellent theoretical properties, has a serious flaw when applied to real world data.  
+
+The Anderson-Darling test is severely affected by ties in the data due to poor precision.  When a significant number of ties exist, the Anderson-Darling will frequently reject the data as non-normal, regardless of how well the data fits the normal distribution. 
+
+**The Shapiro-Wilks Test** 
+
+The Shapiro-Wilks test is also affected by ties and appropriate for sample size between 3 to 5,000 which will not be suitable due to our data size. 
+
+**The Skewness-Kurtosis All Test**
+
+The Skewness-Kurtosis All test is not affected by ties and thus the preferred test for our Modeling purpose.
+
+```{r}
+skewness(wineclean)
+```
+
+The skewness here shows that the distribution of the data for each variable are either slightly skewed to the left or negatively skewed. It is skewed to the left because the computed value is negative, and is slightly because the value is close to zero.
+
+```{r}
+kurtosis(wineclean)
+```
+
+There are three types of kurtosis: mesokurtic, leptokurtic, and platykurtic. A positive value shows heavy-tails (i.e. a lot of data in the tails). A negative value shows light-tails (i.e. little data in the tails). 
+
+The standard normal distribution has a kurtosis of 3, so if the values are close to 3 then our graph’s tails are nearly normal which is known as mesokurtic. 
+
+A leptokurtic distribution has excess positive kurtosis, where the kurtosis is greater than 3. The tails are fatter than the normal distribution. These is mostly evident in our data except for LabelAppeal which is 2.7 hence, close to 3.
+
+### Correlation and Distribution
+
+The approach below gives the following  correlation for these variables
+
+```{r fig1, fig.height=10, fig.width= 15, fig.align='center'}
+# Look at correlation between variables
+corr <- round(cor(wineclean), 1)
+ggcorrplot(corr,
+           type="lower",
+           lab=TRUE,
+           lab_size=3,
+           method="circle",
+           colors=c("tomato2", "white", "springgreen3"),
+           title="Correlation of variables in Training Data Set",
+           ggtheme=theme_bw)
+```
+
+There is no strong correlation between the variables to worry about. 
+
+## Spliting the wine dataset
+
+Use 80% for training and 20% for testing the model
+
+```{r}
+set.seed(1234)
+train <- createDataPartition(y = wineclean$TARGET, p = 0.80, list = FALSE)
+wine_train <- na.omit(wine[train,])
+wine_test  <- na.omit(wine[-train,])
+```
+
+The Training dataset now has 10,238 observations with 15 variables and the testing has 2557 observations with 15 variables.
+
+## Build Models 
+
+Using the training data set, build at least twodifferent poissonregression models, at least two different negative binomial regression models, and  at  least two multiple linear regression  models, using different variables (or the same variables with different transformations). Sometimes poisson and negative binomial regression models give the same results.
+
+You may want to consider building zero-inflated poisson and negative binomial regression models. You may select the variables manually, use an approach such as Forward or Stepwise, use a different approach such as trees, or use a combination of techniques.
+
+### Modeling Method - Regression Tree
+
+```{r}
+winetree <- rpart(TARGET ~., method="anova", data=wine_train) 
+printcp(winetree) # display the results
+plotcp(winetree) # visualize cross-validation results
+summary(winetree) # detailed summary of splits
+```
+```{r}
+rpart.plot(winetree, extra = "auto",fallen.leaves = TRUE, box.palette = "auto")
+```
+
+The Regression Tree shows that 3 variables STARS, LabelAppeal and AcidIndex are important for prdicting the Target variable which is the Number of Cases Purchased. We will not dig much into the Regression Tree as the goal was to help us identify relevant variables for the Count and Multilinear Regression Models.
+
+### Model Method - Poisson
+
+**Poisson Model 1 - All Variables**
+
+Using all the fifteen (15) variables for the Poisson Model provided an AIC value of 18608.  
+
+We will consider these variables in the next model.
+
+```{r}
+wine_poisson1 <- glm(TARGET ~., data = wine_train, family = poisson(link="log"))
+summary(wine_poisson1)
+```
+
+The AIC value is high, the Model also indicated that four (4) variables are significant in predicting the number of wine cases purchased. The three variables have p-values less than 0.05, the variabes are VolatileAcidity, LabelAppeal, AcidIndex, VolatileAcidity and STARS.
+
+**Deviance - wine_poisson1**
+
+```{r}
+deviance1 <- glance(wine_poisson1)
+deviance1
+```
+
+The deviance of the wine_poisson1 model (All Variables) is 3249.562 and the BIC is 18706.19. 
+
+**Pseudo R Square - wine_poisson1**
+
+The Null deviance shows how well the response variable is predicted by a model that includes only the intercept (grand mean) whereas residual with the inclusion of independent variables. Above, we can see that the addition of 14 (5160-5146 = 14) independent variables decreased the deviance from 4742.1 to 3249.6. 
+
+Greater difference in values means a bad fit.
+
+Null Deviance - Residual Deviance / Null Deviance
+
+```{r}
+((wine_poisson1$null.deviance-wine_poisson1$deviance)/wine_poisson1$null.deviance)*100   
+```
+
+31.5% of Total variability in the data was explained by this Model
+
+**Overdispersion - wine_poisson1**
+
+In Poisson regression, it is very important to check for overdispersion since the variance and means are equal.
+
+The potential problem with Poisson GLMs is overdispersion which means that the variance is larger than the mean. Overdispersion occurs when the observed variance of the response variable is larger than would be predicted by the Poisson distribution.
+
+Method - Residual Deviance / Degrees of freedom.
+
+A model is overdispersed when the value is greater than 1.
+
+```{r}
+wine_poisson1$deviance/wine_poisson1$df.residual
+```
+
+This Model is not over-dispersed at 0.6314733.
+
+**Poisson Model 2 - Four Variables** 
+
+```{r}
+wine_poisson2 <- glm(TARGET ~ VolatileAcidity + LabelAppeal + AcidIndex + STARS, data = wine_train, family = poisson(link="log"))
+summary(wine_poisson2)
+```
+The AIC is at 18600 and converged after the fifth iteration.
+
+**Deviance - wine_poisson2**
+
+```{r}
+deviance2 <- glance(wine_poisson2)
+deviance2
+```
+
+The deviance of the wine_poisson2 model (All Variables) is 3249.562 and the BIC is 18632.5.
+
+**Pseudo R Square - wine_poisson2**
+
+Null Deviance - residual Deviance / Null Deviance
+
+```{r}
+((wine_poisson2$null.deviance-wine_poisson2$deviance)/wine_poisson2$null.deviance)*100   
+```
+
+31.2% of Total variability in the data was explained by this Model
+
+**Overdispersion - wine_poisson2**
+
+```{r}
+wine_poisson2$deviance/wine_poisson2$df.residual
+```
+
+This Model is not over-dispersed at 0.6325379.
+
+**Poisson Model 3 - Three Variables**
+
+```{r}
+wine_poisson3 <- glm(TARGET ~ LabelAppeal + AcidIndex + STARS, data = wine_train, family = poisson(link="log"))
+summary(wine_poisson3)
+```
+The AIC is at 18606 and converged after the fifth iteration.
+
+**Deviance - wine_poisson3**
+
+```{r}
+deviance3 <- glance(wine_poisson3)
+deviance3
+```
+
+The deviance of the wine_poisson3 model (All Variables) is 3269.808 and the BIC is 18632.39.
+
+**Pseudo R Square - wine_poisson1**
+
+Null Deviance - residual Deviance / Null Deviance
+
+```{r}
+((wine_poisson3$null.deviance-wine_poisson3$deviance)/wine_poisson3$null.deviance)*100   
+```
+
+31.04% of Total variability in the data was explained by this Model
+
+**Overdispersion - wine_poisson3**
+
+```{r}
+wine_poisson3$deviance/wine_poisson3$df.residual
+```
+
+This Model is not overdispersed at 0.6340523.
+
+### Model Method - Negative Binomial
+
+**Negative Binomial - All Variables**
+
+```{r}
+wine_NB1 <- glm.nb(TARGET ~., data = wine_train)
+summary(wine_NB1)
+```
+
+The Negative Binomial Model did not fully converge to Theta as can be seen above, this is mostly due to the data undispersed relative to the Negative Binomial distribution. 
+
+It appears the distribution of our data is not very suitable for this type of Model. 
+
+We will investigate further with a Zero Inflated Negative Binomial Model to determine if it makes sense to consider this Modeling for our analysis.
+
+**Alternative to Negative Binomial - Three variables**
+
+The function below will develop a Negative Binomial Model using the three significant variables, if it fails to converge, the Function will automatically build a Poisson Regression Model using the Three variables then calculate the coefficients.
+
+```{r}
+ModelGLM <- function() {
+  wineGlm <- glm.nb(TARGET ~ LabelAppeal + AcidIndex + STARS, data = wine_train)
+  if (wineGlm$th.warn == "iteration limit reached") {
+    wineGlm <- glm(TARGET ~ LabelAppeal + AcidIndex + STARS, data = wine_train, family = poisson)
+  }
+  wineGlm
+}
+ModelPoisson <- ModelGLM()
+summary(ModelPoisson)$coefficients
+```
+
+The ModelPoisson produced using this function is the same as the Poisson Model 3 known as wine_poisson3 above which used the three significant variables previously identified.
+
+
+### Model Method - Zero Inflated Model
+
+**Zero Inflated Negative Binomial Model - Three variables**
+
+```{r}
+wineZeroInfNB <- zeroinfl(TARGET ~ LabelAppeal + AcidIndex + STARS, data = wine_train, dist = "negbin")
+summary(wineZeroInfNB)
+```
+
+The Zero Inflated Negative Binomial Model converged with Theta = 10394636.8566 at the 22nd iteration. Theta controls the excess variability compared to Poisson, although this is better than the ordinary Negative Binomial Regression Model above, the variability is too high as can be seen from the output above. 
+
+We can also see that p-value for produced for the Log Theta is only slightly significant at 0.016. Therefore, we will continue to focus on the Poisson Regression and compare it to the Multilinear Regression for this task.
+
+**Zero Inflated Poisson Regression Model - Three variables**
+
+Zero-inflated poisson regression is used to model count data that has an excess of zero counts. Further, theory suggests that the excess zeros are generated by a separate process from the count values and that the excess zeros can be modeled independently.
+
+```{r}
+ZeroInfPoisson <- zeroinfl(TARGET ~ LabelAppeal + AcidIndex + STARS, data = wine_train)
+summary(ZeroInfPoisson)
+```
+
+All of the predictors in both the count and inflation portions of the model are statistically significant except AcidIndex which is only slightly significant at 0.012. 
+
+This model fits the data but the model output above does not indicate if our zero-inflated model is an improvement over the ordinary Poisson Regression Model.
+
+Let's investigate and compare the Models!
+
+**Comparing the Poisson Model to the Zero Inflated**
+
+Using the Vuong Non-Nested Hypothesis Test-Statistic to compare models.
+
+```{r}
+vuong(ModelPoisson, ZeroInfPoisson)
+```
+
+The Vuong test compares the zero-inflated model with the Poisson Regression Model. We can see that the three test statistic are significant, indicating that the zero-inflated model is superior to the Poisson Model.
+
+### Model Method - Multilinear Regression
+
+**Multilinear Regression Model - Stepwise All variables**
+
+```{r}
+wine_OLS1 <-step(lm(TARGET ~., data = wine_train), direction = "both")
+summary(wine_OLS1) 
+Metrics1 <- data.frame(
+  R2 = rsquare(wine_OLS1, data = wine_train),
+  RMSE = rmse(wine_OLS1, data = wine_train),
+  MAE = mae(wine_OLS1, data = wine_train)
+)
+print(Metrics1)
+```
+
+The Stepwise variable selection process identified five variables significant which are VolatileAcidity, Alcohol, LabelAppeal, AcidIndex and STARS with an $R^2$ of 45%, Residual Error of 1.159 and F-Statistic of 459.7. 
+
+Notice that some of the coefficients are negative which means these variables will negatively impact the number of wine cases purchased.
+
+We will explore these coefficient a little further in this analysis.
+
+**Multilinear Regression Model - Five variables**
+
+```{r}
+wine_OLS2 <-lm(TARGET ~ VolatileAcidity + Alcohol + LabelAppeal + AcidIndex + STARS, data = wine_train)
+summary(wine_OLS2)
+Metrics2 <- data.frame(
+  R2 = rsquare(wine_OLS2, data = wine_train),
+  RMSE = rmse(wine_OLS2, data = wine_train),
+  MAE = mae(wine_OLS2, data = wine_train)
+)
+print(Metrics2)
+```
+
+Although the F-Statistic improved to 821.5, the $R^2$ did not show any significant improvement.
+
+**Multilinear Regression Model - Two variables**
+
+Using only the two variables with positive coefficient yield the folling model outcome.
+
+```{r}
+wine_OLS3 <-lm(TARGET ~ LabelAppeal + STARS, data = wine_train)
+summary(wine_OLS3)
+Metrics3 <- data.frame(
+  R2 = rsquare(wine_OLS3, data = wine_train),
+  RMSE = rmse(wine_OLS3, data = wine_train),
+  MAE = mae(wine_OLS3, data = wine_train)
+)
+print(Metrics3) 
+  
+```
+
+Although the F-Statistic improved to 1887 the $R^2$ did not show slight decrease from the previuos OLS Models.
+
+## Model Performance
+
+### Evaluating the Selected Model
+
+**Comparing the Poisson Model Fit**
+
+```{r}
+ModelName <- c("wine_poisson1", "wine_poisson2","wine_poisson3")
+Model_PseudRSq <- c("31.50%", "31.20% ", "31.04%")
+Model_Overdisp <- c("0.6314", "0.6325", "0.6341")
+Model_Deviance <- c("3249.56", "3261.36", "3269.81")
+Model_AIC <- c("18,608", "18,600", "18,606")
+Model_BIC <- c("18,706", "18,633", "18,632")
+Model_Performance <- data.frame(ModelName,Model_PseudRSq,Model_Overdisp,Model_Deviance,Model_AIC,Model_BIC)
+Model_Performance
+```
+
+**Comparing the OLS Model Fit**
+
+```{r}
+ModelName <- c("wine_OLS1", "wine_OLS2","wine_OLS3")
+Model_RSquared <- c("45%", "44% ", "42%")
+Model_RMSE <- c("1.157", "1.159", "1.181")
+Model_FStatistic <- c("459.7", "821.5", "1887.0")
+Model_Performance <- data.frame(ModelName,Model_RSquared,Model_RMSE,Model_FStatistic)
+Model_Performance
+```
+
+The performance Metrics above indicates that none of the models are performing at optimal level. Although the OLS Models have better $R^2$, we will not be deploying any of the OLS model since this is a count problem wher we're trying the predict the of wine cases purchased based on certain properties of the wine. 
+
+The Regression tree from the begining indicated that only three (3) variables are significant for our prediction and several other Models we have analyzed also shows that these three variables continue to be significant and consistent. 
+
+Therefore, we will select the count Model with these three variables which is wine_poisson3 as our selected Model for this task.
+
+**Coefficients Analysis**
+
+```{r}
+exp(coef(wine_poisson3))
+```
+
+From the above, we can say that one unit increase in LabelAppeal will likely increase the chance of the number of wine cases purchased by 1.197.
+
+One unit increase in AcidIndex will likely increase the chance of the number of wine cases purchased by 0.949.
+
+One unit increase in STARS will likely increase the chance of the number of wine cases purchased by 1.210.  
+
+The most important aspect of Poisson regression is that exponentiated parameters have a multiplicative rather than an additive effect on the response variable.
+
+**Model Cross Validation**
+
+The use case for Gain Curve is to compare a predictive model score to an actual outcome (either binary (0/1) or continuous). In this case the gain curve plot measures how well the model score sorts the data compared to the true outcome value.
+
+Cross Validating the Model using Gain Curve on training dataset yields the following chart and a relative Gini score of 70%.
+
+```{r,message=FALSE, warning=FALSE}
+wineGini <- augment(wine_poisson3) %>% data.frame(wine_train) %>% 
+          GainCurvePlot(xvar = ".fitted", truthVar = "TARGET", title = "Poisson Selected Model")
+wineGini
+```
+
+### Using Test Dataset
+
+```{r,message=FALSE, warning=FALSE}
+prediction <- predict(wine_poisson3,newdata = wine_test,type="response") 
+ggplot(wine_test, aes(x = prediction, y = wine_test$TARGET)) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  geom_segment(aes(xend = prediction, yend = wine_test$TARGET), alpha = .2) +
+  geom_abline(color = "darkblue")+
+  labs(y = "Actual Target", x = "Predicted Target") +
+  ggtitle("Predicted Target Vs Actual, Poisson Model")
+```
+
+The Model prediction is close to Actual as indicated by evaluating the Model using the testing data.
+
+## Model Prediction
+
+Making predictions using the evaluation Dataset
+
+```{r}
+newEvaluation <- na.omit(wine_evaluation)
+prediction <- predict(wine_poisson3,newdata = newEvaluation,type="response")  
+newEvaluation$TARGET <- round(prediction, digits = 0)
+newEvaluation <- newEvaluation[,c(16,2:15)]
+View(newEvaluation)
+write.csv(newEvaluation, "Poisson_Prediction.csv")
+```
+
+
+## Conclusion
+
+The data was not a good fit for a Negative Binomial Model based on the expectation of a Negative Binomial distribution. The Theta could not converge at a reason value after multiple iteration.
+
+The selected Poisson Model was based on the predictive ability obtained from the Regression Tree and the conconrence of the subsequent models concerning the significant variables. The selected Model was also based on the peformance from the AIC, Pseudo $R^2$, Deviance value, Overdispersion and the significant p-value from the Vuong Non-Nested Hypothesis Test-Statistic.
+
+Cross Validating the selected Model shows relative Gini score of 70% and evaluating the selected model using the testing data shows predictive values close to the actuals as can be seen from the Target Vs Actual plot above.
+
+From the coefficient analysis, we saw that one unit increase in LabelAppeal will likely increase the chance of the number of wine cases purchased by 1.197. One unit increase in AcidIndex will likely increase the chance of the number of wine cases purchased by 0.949 and one unit increase in STARS will likely increase the chance of the number of wine cases purchased by 1.210.
+
+Using the Evaluation data provided, the Model was able to predict new Target as the number of wine cases to be purchased using the chemical properties from the significant variables identified above. The result of the new target or Model prediction is saved as a new variable called newEvaluation and can be viewed directly or saved as csv file.
