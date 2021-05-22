@@ -1,0 +1,243 @@
+---
+title: "DATA 621 Assignment 1"
+author: "Team 2: Vanita Thompson, David Moste, "
+date: "3/5/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# 1. Data Exploration
+
+The moneyball training data set contains 2276 rows and 17 columns, including variables such as TARGET_WINS, TEAM_BATTING, TEAN_BASERUN, etc. The variables have a positive or negative effect on the number of games the baseball team won during the season. Running a summary() function on the data set, we are able to get the mean, median, first and third quartile and the minimum and maximum values for each variable. We included a correlation plot and pairs plot to visualize the relationship among the variables. Histograms were created for each type of hits to observe the normality of the variables. We explored the structure of the variables for both the training and evaluation data sets and finally observed how TARGET_WINS are affected by other factors. Interestingly, the number of wins seems positively correlated with all hits by batters except triples by batters, which the correlation plot shows as slightly negatively correlated. One potential explanation may be that getting triples, while good, is actually always worse than getting homeruns, so having a large number of triples may actually mean the team is just barely falling short. Nothing from the correlation plot can be used to conclude this, but it is something that can be investigated further in the future. Also surprising is that stolen bases barely has any positive correlation with wins, but that may just be due to the rarity of the event (stolen bases). TEAM_PITCHING_H, TEAM_PITCHING_BB, and TEAM_PITCHING_HR surprisingly shows a positive correlation with team wins, but maybe this alludes to having good batters and getting runs being more important to winning than stopping the opponent from getting runs. Similarly, TEAM_PITCHING_SO and TEAM_PITCHING_DP are events of denying the opponent runs, but they show a negative correlation with number of wins and may also point to getting runs for your team as the key to winning.
+
+# 2. Data Preparation
+
+We addressed issues with imperfect data before building models or performing statistical analysis. We observed that several variables have high numbers of NA or missing values. TEAM_BATTING_HBP has the highest number of missing cases i.e., 2085 (~ 90%). Based on the variable definitions given in the assignment, it seemed reasonable that NA values meant that there were no occurrences of that event.  So we chose to create additional columns flagging whether the original variable was NA or not (1 if NA, 0 if not NA), and then filled NAs with 0.
+
+# 3. Build Models
+
+First we built a model using the backward elimination process. In this process, we rejected predictors with p-value greater than 0.05 and stopped after all remaining model predictors had p-values of less than 0.05. For our second model we decided to use stepwise selection. Stepwise selection uses an automated process of building a model by adding or removing predictors repeatedly based on an improvement of a criterion (Akaike information criterion in our case).  We noticed one of the variables, TEAM_PITCHING_SO, had a p-value greater than 0.05 in the second model so we decided to build a third model using stepwise regression with the TEAM_PITCHING_SO predictor removed. The third model's R squared dropped slightly, so we decided to stick with our second model. 
+
+# 4. Select Models
+
+Out of the three models we created, the second model with stepwise selection was the best of the three. The Adjusted R squared is 0.4098 which translates to approximately 41% of variation in Target Wins can be explained by our model. The F statistic tells us if there is a relationship between the dependent and independent variables we are testing. Generally, a large F indicates a stronger relationship and we have 113.9. The normal quantile quantile plot for residuals displays an approximately straight line so the residuals are approximately normally distributed. However, there is slight deviation at the extreme values, meaning our model does have a bit of trouble predicting a very high or low number of wins accurately. The MSE is 743.6606. Using this model we were able to make predictions for the test dataset. Finally, we made a histogram of wins from the training and evaluation set to see if the prediction distribution looked fairly similar to the training distribution, which it does.
+
+
+# Appendix
+
+```{r}
+# load required packages
+library(ggplot2)
+library(dplyr)
+#library(tidyr)
+library(corrplot)
+library(MASS)
+library(caret)
+library(RCurl)
+```
+
+```{r import}
+# Loading the data
+git_dir <- 'https://raw.github.com/vthomps000/DATA621/master/Data'
+train_df = read.csv(paste(git_dir, "/moneyball-training-data.csv", sep=""))
+test_df = read.csv(paste(git_dir, "/moneyball-evaluation-data.csv", sep = ""))
+```
+
+# 1. Data Exploration
+
+See a summary of each column in the train_dfing set
+```{r train_dfing_data_summary}
+# view a summary of all columns
+summary(train_df)
+```
+
+```{r}
+# Correlations 
+cor_train = cor(train_df,  use = "na.or.complete")
+corrplot(cor_train)
+```
+
+For types of hits, see a histogram of each
+```{r hits_histograms}
+par(mfrow=c(2,2))
+hist(train_df$TEAM_BATTING_H,
+     main = "hits histogram", xlab = "hits (season)",
+     breaks = 20)
+hist(train_df$TEAM_BATTING_2B,
+     main = "doubles histogram", xlab = "doubles (season)",
+     breaks = 20)
+hist(train_df$TEAM_BATTING_3B,
+     main = "triples histogram", xlab = "triples (season)",
+     breaks = 20)
+hist(train_df$TEAM_BATTING_HR,
+     main = "homeruns histogram", xlab = "homeruns (season)",
+     breaks = 20)
+par(mfrow=c(1,1))
+```
+
+```{r}
+pairs(~ TARGET_WINS + TEAM_BATTING_H + TEAM_BATTING_2B
+      + TEAM_BATTING_3B + TEAM_BATTING_HR, data = train_df)
+```
+```{r}
+# look at the structure of the variables
+str(train_df)
+str(eval)
+```
+
+```{r}
+# lets observe how targets_win are effected by other factors
+hist(train_df$TARGET_WINS,xlab="TARGET_WINS",main="")
+# we have no TARGET_WINS from eval
+# hist(eval$TARGET_WINS,xlab="TARGET_WINS",main="")
+```
+
+
+
+# 2. Data Preparation
+
+1. We are told everything is standardized to match a 162 game season, so it is my preference to make TARGET_WINS a decimal of 162
+```{r}
+train_target_wins = train_df$TARGET_WINS
+#train_df$TARGET_WINS = train_df$TARGET_WINS/162.
+# TARGET_WINS now a decimal of games won in 162 game season
+hist(train_df$TARGET_WINS,xlab="TARGET_WINS",main="")
+str(train_df)
+```
+
+2. Assuming that everything that is NA can be filled by 0 based on the description of variables, create columns flagging if original values were NA (e.g. create TEAM_BATTING_HBP_NA column and value is 1 if TEAM_BATTING_HBP is NA and 0 otherwise meaning it wasn't NA and had a value. Do this for all columns)
+```{r}
+# 
+has_NA = names(which(sapply(train_df, anyNA)))
+for (col in has_NA)
+{
+   new_col = (paste(col,"_NA", sep=""))
+   train_df[,new_col] = as.numeric(is.na(train_df[,col]))
+   test_df[,new_col] = as.numeric(is.na(test_df[,col]))
+}
+train_df[is.na(train_df)] = 0
+test_df[is.na(test_df)] = 0
+```
+
+# 3. Build Models
+```{r}
+# set seed for reproducibility
+n_records = nrow(train_df)
+set.seed(1)
+```
+
+# Model 1 - Backward Elimination Process
+
+We will be rejecting predictors with p-value greater than 0.05 with the backward elimination process. We will stop after all the predictors are less than 0.05
+
+```{r}
+model <- lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BATTING_2B + TEAM_BATTING_3B + TEAM_BATTING_HR + TEAM_BATTING_BB + TEAM_PITCHING_H + TEAM_PITCHING_HR + TEAM_PITCHING_BB + TEAM_FIELDING_E, data=train_df)
+summary(train_df)
+
+model <- update(model, .~. - TEAM_BATTING_BB, data=train_df)
+summary(model)
+
+model <- update(model, .~. - TEAM_PITCHING_HR, data=train_df)
+summary(model)
+```
+
+```{r}
+plot(fitted(model), resid(model))
+hist(model$residuals)
+qqnorm(resid(model))
+qqline(resid(model))
+```
+
+```{r}
+#predict the model on the eval
+colnames(test_df)
+#remove the predictors that have negative effect to the target wins
+
+new_eval_model = subset(test_df, select=c(TEAM_BATTING_H, TEAM_BATTING_2B, TEAM_BATTING_3B, TEAM_BATTING_HR, TEAM_PITCHING_H, TEAM_PITCHING_BB, TEAM_FIELDING_E))
+# Turn the NA values in 0
+new_eval_model[is.na(new_eval_model)] = 0
+
+# prediction model
+prediction_model <- predict(model, newdata=new_eval_model)
+prediction_model
+```
+
+# Model 2 - Stepwise Regression
+```{r}
+# Try stepwise regression as mentioned in http://www.sthda.com/english/articles/37-model-selection-essentials-in-r/154-stepwise-regression-essentials-in-r/
+full_model = lm(TARGET_WINS ~ ., data=train_df)
+step.model <- stepAIC(full_model, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+```
+
+```{r}
+# Train model
+train_control = trainControl(method = "cv", number = 10)
+step_model = train(TARGET_WINS ~ ., data=train_df,
+                   method = "lmStepAIC",
+                   trControl = train_control,
+                   trace=FALSE)
+# Model accuracy
+step_model$results
+
+# Final model coefficients
+step_model$finalModel
+
+# Summary of model
+summary(step_model$finalModel)
+```
+
+```{r}
+model = step_model$finalModel
+plot(fitted(model), resid(model))
+hist(model$residuals)
+qqnorm(resid(model))
+qqline(resid(model))
+
+# Check MSE
+mean(summary(model$residuals^2))
+# 743.6606
+```
+
+# Model 3 - Try removing TEAM_PITCHING_SO
+```{r}
+# Train model without TEAM_PITCHING_SO since it has a relatively high p-value
+train_control = trainControl(method = "cv", number = 10)
+no_TPS = subset(train_df, select=-c(TEAM_PITCHING_SO))
+step_model_noTPS = train(TARGET_WINS ~ ., data=no_TPS,
+                   method = "lmStepAIC",
+                   trControl = train_control,
+                   trace=FALSE)
+# Model accuracy
+step_model_noTPS$results
+
+# Final model coefficients
+step_model_noTPS$finalModel
+
+# Summary of model
+summary(step_model_noTPS$finalModel)
+```
+
+```{r}
+model_noTPS = step_model_noTPS$finalModel
+plot(fitted(model_noTPS), resid(model_noTPS))
+hist(model_noTPS$residuals)
+qqnorm(resid(model_noTPS))
+qqline(resid(model_noTPS))
+```
+
+# Predictions on Evaluation Set
+
+```{r}
+# convert decimals of wins back to number of wins, rounded
+test_preds = round(predict(model, newdata=test_df)) #*162
+test_df$PRED_TARGET_WINS = test_preds
+# write out evaluation data with predictions
+write.csv(test_df, 'data/eval_with_preds.csv')
+
+# visually inspect the distribution of predictions for test and wins from the training set
+hist(test_preds)
+hist(train_target_wins)
+```
